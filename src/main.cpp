@@ -15,7 +15,9 @@ IPAddress GATEWAY(192, 168, 0, 1);
 IPAddress DNS_SERVER(192, 168, 0, 10);
 
 #define NTP_POOL = "nl.pool.ntp.org"
-#define TIMEZONE = "CET-1CEST,M3.5.0/2,M10.5.0/3"; /* Central European Time - see https://sites.google.com/a/usapiens.com/opnode/time-zones */
+#define TIMEZONE = "CET-1CEST,M3.5.0/2,M10.5.0/3";
+/* Central European Time - see
+ * https://sites.google.com/a/usapiens.com/opnode/time-zones */
 
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 static S8_UART *sensor_S8;
@@ -30,6 +32,7 @@ void setup()
 
     while (!Serial)
         delay(1);
+
     delay(5000);
 
     Serial.println("SHT31 test");
@@ -66,7 +69,7 @@ void setup()
 
     // connect to wifi
     WiFi.mode(WIFI_MODE_AP);
-    WiFi.setAutoReconnect(false);
+    WiFi.setAutoReconnect(true);
     WiFi.begin(SSID, PSK);
     WiFi.setSleep(false);
     while (!WiFi.isConnected())
@@ -81,29 +84,34 @@ void setup()
     server.listen(80);
 
     websocketHandler.onOpen([](PsychicWebSocketClient *client)
-                            {
-    Serial.printf("[socket] connection #%u connected from %s\n",
-                  client->socket(), client->remoteIP().toString());
-    client->sendMessage("Hello!"); });
+    {
+        Serial.printf("[socket] connection #%u connected from %s\n", client->socket(), client->remoteIP().toString());
+        client->sendMessage("Hello!"); 
+    });
 
-    websocketHandler.onClose([](PsychicWebSocketClient *client)
-                             { Serial.printf("[socket] connection #%u closed from %s\n", client->socket(),
-                                             client->remoteIP().toString()); });
-
-    server.on("/ip", [](PsychicRequest *request)
-              {
-   String output = "Your IP is: " + request->client()->remoteIP().toString();
-   return request->reply(output.c_str()); });
-
-    server.on("/hello", HTTP_GET, [](PsychicRequest *request)
-              {
-                String hello = "Hello world!";
-                 return request->reply(200, "text/html", hello.c_str()); });
+    websocketHandler.onClose( [](PsychicWebSocketClient *client)
+    { 
+        Serial.printf("[socket] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString()); 
+    });
 
     server.on("/ws", &websocketHandler);
 
+    server.on("/ip", [](PsychicRequest *request)
+    {
+        String output = "Your IP is: " + request->client()->remoteIP().toString();
+        return request->reply(output.c_str()); 
+    });
+
+    server.on("/hello", HTTP_GET, [](PsychicRequest *request)
+    {
+        String hello = "Hello world!";
+        return request->reply(200, "text/html", hello.c_str()); 
+    });
+
     server.onNotFound([](PsychicRequest *request)
-                      { return request->reply(404, "text/html", "Custom 404 Handler"); });
+    { 
+        return request->reply(404, "text/html", "Custom 404 Handler"); 
+    });
 }
 
 bool enableHeater = false;
