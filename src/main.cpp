@@ -50,6 +50,8 @@ void setup()
     else
         Serial.println("DISABLED");
 
+    log_i("temp %.1f", sht31.readTemperature());
+
     Serial1.setPins(21, 20);
     Serial1.begin(S8_BAUDRATE);
     sensor_S8 = new S8_UART(Serial1);
@@ -89,7 +91,7 @@ void setup()
         client->sendMessage("Hello!"); 
     });
 
-    websocketHandler.onClose( [](PsychicWebSocketClient *client)
+    websocketHandler.onClose([](PsychicWebSocketClient *client)
     { 
         Serial.printf("[socket] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString()); 
     });
@@ -110,7 +112,7 @@ void setup()
 
     server.onNotFound([](PsychicRequest *request)
     { 
-        return request->reply(404, "text/html", "Custom 404 Handler"); 
+        return request->reply(404, "text/html", "No page here. Use websocket to connect to /ws."); 
     });
 }
 
