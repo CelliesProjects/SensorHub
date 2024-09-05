@@ -14,10 +14,10 @@ IPAddress SUBNET(255, 255, 255, 0);
 IPAddress GATEWAY(192, 168, 0, 1);
 IPAddress DNS_SERVER(192, 168, 0, 10);
 
-#define NTP_POOL = "nl.pool.ntp.org"
-#define TIMEZONE = "CET-1CEST,M3.5.0/2,M10.5.0/3";
-/* Central European Time - see
- * https://sites.google.com/a/usapiens.com/opnode/time-zones */
+#define SENSORS_WS_URL "/sensors"
+
+#define NTP_POOL "nl.pool.ntp.org"               /* change 'nl' to your countries ISO code for better latency */
+#define TIMEZONE "CET-1CEST,M3.5.0/2,M10.5.0/3"; /* Central European Time - see https://sites.google.com/a/usapiens.com/opnode/time-zones */
 
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 static S8_UART *sensor_S8;
@@ -79,10 +79,12 @@ void setup()
 
     Serial.printf("Connected to %s\n", SSID);
     Serial.printf("IP %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("Sensor websocket started at http://%s%s\n", WiFi.localIP().toString().c_str(), SENSORS_WS_URL);
 
     // setup the webserver
 
-    server.config.max_uri_handlers = 20;
+    server.config.max_uri_handlers = 8;
+    server.config.max_open_sockets = 8;
     server.listen(80);
 
     websocketHandler.onOpen([](PsychicWebSocketClient *client)
@@ -96,7 +98,7 @@ void setup()
         Serial.printf("[socket] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString()); 
     });
 
-    server.on("/ws", &websocketHandler);
+    server.on(SENSORS_WS_URL, &websocketHandler);
 
     server.on("/ip", [](PsychicRequest *request)
     {
@@ -123,15 +125,13 @@ void loop()
 {
     static int32_t lastCo2 = 0;
     static float lastTemp = -200;
-    static float lastHumidity = 0;
+    static int32_t lastHumidity = 0;
 
     int32_t co2Level = sensor_S8->get_co2();
     float temp = sht31.readTemperature();
-    float humidity = sht31.readHumidity();
+    int32_t humidity = sht31.readHumidity(); // save the int part to reduce noise
 
-    // round off measurements to 1 decimal place to reduce noise
-    temp = static_cast<float>(static_cast<int>(temp * 10.)) / 10.;
-    humidity = static_cast<float>(static_cast<int>(humidity * 10.)) / 10.;
+    temp = static_cast<float>(static_cast<int>(temp * 10.)) / 10.; // round off to 1 decimal place to reduce noise
 
     char responseBuffer[16];
 
@@ -153,9 +153,9 @@ void loop()
 
     if (!isnan(humidity) && humidity != lastHumidity)
     {
-        snprintf(responseBuffer, sizeof(responseBuffer), "H:%.1f", humidity);
+        snprintf(responseBuffer, sizeof(responseBuffer), "H:%i", humidity);
         websocketHandler.sendAll(responseBuffer);
-        Serial.printf("humidity updated to %.1f\n", humidity);
+        Serial.printf("humidity updated to %i\n", humidity);
         lastHumidity = humidity;
     }
 
