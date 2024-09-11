@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <SD.h>
 #include <SPI.h>
 #include <WiFi.h>
 #include <driver/uart.h>
@@ -27,25 +28,40 @@ static S8_UART *sensor_S8;
 static PsychicHttpServer server;
 static PsychicWebSocketHandler websocketHandler;
 
-static storageStruct lastResults{-200 /* temp */, 0 /* co2 */, 0 /* humidity */};
-static storageStruct history[90];
+static storageStruct lastResults{-200 /* temp */,
+                                 0 /* co2 */,
+                                 0 /* humidity */};
+static storageStruct history[90]; // this should be a ringbuffer in psram to hold significant data
 
 void setup()
 {
     Serial.begin(115200);
     Serial.setDebugOutput(true);
-
+/*
     while (!Serial)
         delay(1);
 
     delay(5000);
+*/
+    SPI.setHwCs(true);
+    SPI.begin(SCK, MISO, MOSI);
+    if (!SD.begin(SS))
+        log_e("No SDcard");
+
+    log_i("SDcard mounted");
 
     Wire.begin(SHT31_SDA, SHT31_SCL);
     if (!sht31.begin(SHT31_DEFAULT_ADDR))
     {
-        log_e("Couldn't find SHT31 at address %u", SHT31_DEFAULT_ADDR);
+        log_e("FATAL ERROR! Couldn't find SHT31 at address %u", SHT31_DEFAULT_ADDR);
+        pinMode(BUILTIN_LED, OUTPUT);
         while (1)
-            delay(1);
+        {
+            digitalWrite(BUILTIN_LED, HIGH);
+            delay(100);
+            digitalWrite(BUILTIN_LED, LOW);
+            delay(100);
+        }
     }
 
     log_i("temp %.1f", sht31.readTemperature());
@@ -57,8 +73,14 @@ void setup()
     if (!sensor_S8)
     {
         log_e("FATAL ERROR! Could not initialize CO2 sensor.");
+        pinMode(BUILTIN_LED, OUTPUT);
         while (1)
+        {
+            digitalWrite(BUILTIN_LED, HIGH);
             delay(100);
+            digitalWrite(BUILTIN_LED, LOW);
+            delay(100);
+        }
     }
 
     log_i("CO2 level, %i", sensor_S8->get_co2());
