@@ -4,6 +4,8 @@
 #include <WiFi.h>
 #include <driver/uart.h>
 
+#include <forward_list>
+
 #include <Adafruit_SHT31.h>
 #include <PsychicHttp.h>
 #include <s8_uart.h>
@@ -31,59 +33,61 @@ static PsychicWebSocketHandler websocketHandler;
 static storageStruct lastResults{-200 /* temp */,
                                  0 /* co2 */,
                                  0 /* humidity */};
-static storageStruct history[90]; // this should be a ringbuffer in psram to hold significant data
+
+std::forward_list<storageStruct> history;
+
+void fatalError(const char *str)
+{
+    log_e("FATAL ERROR %s - SYTEM HALTED", str);
+    pinMode(BUILTIN_LED, OUTPUT);
+    while (1)
+    {
+        digitalWrite(BUILTIN_LED, HIGH);
+        delay(100);
+        digitalWrite(BUILTIN_LED, LOW);
+        delay(100);
+    }
+}
 
 void setup()
 {
     Serial.begin(115200);
     Serial.setDebugOutput(true);
-/*
+
     while (!Serial)
         delay(1);
 
-    delay(5000);
-*/
+    delay(2000);
+
+    Serial.println("SensorHub");
+
+    history.push_front(lastResults);
+    lastResults.temp = -400;
+    history.push_front(lastResults);
+    lastResults.temp = -500;
+    history.push_front(lastResults);
+    lastResults.temp = -700;
+    history.push_front(lastResults);
+
+    for (auto const &item : history)
+        Serial.printf("temp % 4.1fC\tco2 % 6ippm\thumidity % 6i%%\n", item.temp, item.co2, item.humidity);
+
     SPI.setHwCs(true);
     SPI.begin(SCK, MISO, MOSI);
-    if (!SD.begin(SS))
-        log_e("No SDcard");
+    bool result = SD.begin(SS);
 
-    log_i("SDcard mounted");
+    log_i("SDcard %s mounted", result ? "is" : "not");
 
     Wire.begin(SHT31_SDA, SHT31_SCL);
     if (!sht31.begin(SHT31_DEFAULT_ADDR))
-    {
-        log_e("FATAL ERROR! Couldn't find SHT31 at address %u", SHT31_DEFAULT_ADDR);
-        pinMode(BUILTIN_LED, OUTPUT);
-        while (1)
-        {
-            digitalWrite(BUILTIN_LED, HIGH);
-            delay(100);
-            digitalWrite(BUILTIN_LED, LOW);
-            delay(100);
-        }
-    }
-
-    log_i("temp %.1f", sht31.readTemperature());
+        fatalError("no SHT31 sensor");
 
     Serial1.setPins(SENSEAIR_RXD, SENSEAIR_TXD);
     Serial1.begin(S8_BAUDRATE);
     sensor_S8 = new S8_UART(Serial1);
 
     if (!sensor_S8)
-    {
-        log_e("FATAL ERROR! Could not initialize CO2 sensor.");
-        pinMode(BUILTIN_LED, OUTPUT);
-        while (1)
-        {
-            digitalWrite(BUILTIN_LED, HIGH);
-            delay(100);
-            digitalWrite(BUILTIN_LED, LOW);
-            delay(100);
-        }
-    }
-
-    log_i("CO2 level, %i", sensor_S8->get_co2());
+        fatalError("Could not initialize CO2 sensor");
 
     /* try to set a static IP */
     if (!WiFi.config(STATIC_IP, GATEWAY, SUBNET, DNS_SERVER))
@@ -139,6 +143,14 @@ void setup()
 
 void loop()
 {
+    // add the values 10 times a minute to a running counter
+    // add the average over that period to front of the history
+    // if there are MAX_HISTORY_ITEMS items delete the last item before adding the next one in front
+
+    static int32_t averageCo2Level = 0;
+    static int32_t averageHumidity = 0;
+    static float averageTemperature = 0;
+
     int32_t co2Level = sensor_S8->get_co2();
     float temp = sht31.readTemperature();
     int32_t humidity = sht31.readHumidity(); // only use the integer part to reduce noise
