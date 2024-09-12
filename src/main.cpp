@@ -233,7 +233,7 @@ void loop()
         saveAverage();
 
     int32_t co2Level = sensor_S8->get_co2();
-    float temp = sht31.readTemperature();
+    float temp = sht31.readTemperature(); // delays for 20ms - so this loop does not delay
     int32_t humidity = sht31.readHumidity(); // only use the integer part to reduce noise
 
     temp = static_cast<float>(static_cast<int>(temp * 10.)) / 10.; // round off to 1 decimal place to reduce noise
@@ -254,7 +254,7 @@ void loop()
         digitalWrite(BUILTIN_LED, HIGH);
         websocketHandler.sendAll(responseBuffer);
         digitalWrite(BUILTIN_LED, LOW);
-        Serial.println(responseBuffer);
+        //Serial.println(responseBuffer);
         lastResults.co2 = co2Level;
         lastCo2ResponseMS = millis();
     }
@@ -266,7 +266,7 @@ void loop()
         digitalWrite(BUILTIN_LED, HIGH);
         websocketHandler.sendAll(responseBuffer);
         digitalWrite(BUILTIN_LED, LOW);
-        Serial.println(responseBuffer);
+        //Serial.println(responseBuffer);
         lastResults.temp = temp;
         lastTempResponseMS = millis();
     }
@@ -278,10 +278,8 @@ void loop()
         digitalWrite(BUILTIN_LED, HIGH);
         websocketHandler.sendAll(responseBuffer);
         digitalWrite(BUILTIN_LED, LOW);
-        Serial.println(responseBuffer);
+        //Serial.println(responseBuffer);
         lastResults.humidity = humidity;
         lastHumidityResponseMS = millis();
     }
-
-    delay(5);
 }
