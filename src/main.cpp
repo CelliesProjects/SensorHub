@@ -20,9 +20,14 @@ IPAddress GATEWAY(192, 168, 0, 1);
 IPAddress DNS_SERVER(192, 168, 0, 10);
 
 #define SENSORS_WS_URL "/sensors"
+#define SAVE_TIME_MIN (1) /* data save interval in minutes */
 
-#define NTP_POOL "nl.pool.ntp.org"               /* change 'nl' to your countries ISO code for better latency */
+#ifndef NTP_POOL
+#define NTP_POOL "nl.pool.ntp.org" /* change 'nl' to your countries ISO code for better latency */
+#endif
+#ifndef TIMEZONE
 #define TIMEZONE "CET-1CEST,M3.5.0/2,M10.5.0/3"; /* Central European Time - see https://sites.google.com/a/usapiens.com/opnode/time-zones */
+#endif
 
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 static S8_UART *sensor_S8;
@@ -30,11 +35,13 @@ static S8_UART *sensor_S8;
 static PsychicHttpServer server;
 static PsychicWebSocketHandler websocketHandler;
 
-static storageStruct lastResults{-200 /* temp */,
-                                 0 /* co2 */,
-                                 0 /* humidity */};
+static storageStruct lastResults{
+    NAN, /* temp */
+    0,   /* co2 */
+    0    /* humidity */
+};
 
-std::forward_list<storageStruct> history;
+static std::forward_list<storageStruct> history;
 
 void fatalError(const char *str)
 {
@@ -60,18 +67,18 @@ void setup()
     delay(2000);
 
     Serial.println("SensorHub");
+    /*
+        history.push_front(lastResults);
+        lastResults.temp = -400;
+        history.push_front(lastResults);
+        lastResults.temp = -500;
+        history.push_front(lastResults);
+        lastResults.temp = -700;
+        history.push_front(lastResults);
 
-    history.push_front(lastResults);
-    lastResults.temp = -400;
-    history.push_front(lastResults);
-    lastResults.temp = -500;
-    history.push_front(lastResults);
-    lastResults.temp = -700;
-    history.push_front(lastResults);
-
-    for (auto const &item : history)
-        Serial.printf("temp % 4.1fC\tco2 % 6ippm\thumidity % 6i%%\n", item.temp, item.co2, item.humidity);
-
+        for (auto const &item : history)
+            Serial.printf("temp %.1fC\tco2 %ippm\thumidity %i%%\n", item.temp, item.co2, item.humidity);
+    */
     SPI.setHwCs(true);
     SPI.begin(SCK, MISO, MOSI);
     bool result = SD.begin(SS);
@@ -80,10 +87,9 @@ void setup()
 
     Wire.begin(SHT31_SDA, SHT31_SCL);
     if (!sht31.begin(SHT31_DEFAULT_ADDR))
-        fatalError("no SHT31 sensor");
+        fatalError("No SHT31 sensor");
 
-    Serial1.setPins(SENSEAIR_RXD, SENSEAIR_TXD);
-    Serial1.begin(S8_BAUDRATE);
+    Serial1.begin(S8_BAUDRATE, SERIAL_8N1, SENSEAIR_RXD, SENSEAIR_TXD);
     sensor_S8 = new S8_UART(Serial1);
 
     if (!sensor_S8)
@@ -103,6 +109,18 @@ void setup()
 
     log_i("Connected to %s", SSID);
     log_i("IP %s", WiFi.localIP().toString().c_str());
+
+    /* sync the clock with ntp */
+    Serial.println("syncing NTP");
+    configTzTime(TIMEZONE, NTP_POOL);
+
+    tm now{};
+
+    while (!getLocalTime(&now, 0))
+        delay(10);
+
+    Serial.println("NTP synced");
+
     log_i("Sensor websocket started at http://%s%s", WiFi.localIP().toString().c_str(), SENSORS_WS_URL);
 
     // setup the webserver
@@ -141,15 +159,43 @@ void setup()
                       { return request->reply(404, "text/html", "No page here. Use websocket to connect to /ws."); });
 }
 
+static storageStruct average{0};
+static uint32_t numberOfSamples{0};
+
+void saveAverage(const tm &timeinfo)
+{
+    Serial.print(asctime(&timeinfo));
+
+    average.co2 /= numberOfSamples;
+    average.temp /= numberOfSamples;
+    average.humidity /= numberOfSamples;
+    Serial.printf(" - saving the average of %i samples: temp %.1f\tco2\t%ippm\thumidity %i%%\n",
+                  numberOfSamples, average.temp, average.co2, average.humidity);
+    average = {0, 0, 0};
+    numberOfSamples = 0;
+}
+
 void loop()
 {
-    // add the values 10 times a minute to a running counter
-    // add the average over that period to front of the history
+    // add the values 60 times a minute to a running counter
+    // divide by 60 and add the average over that period to front of the history
     // if there are MAX_HISTORY_ITEMS items delete the last item before adding the next one in front
 
-    static int32_t averageCo2Level = 0;
-    static int32_t averageHumidity = 0;
-    static float averageTemperature = 0;
+    static time_t lastSecond = time(NULL);
+    if (time(NULL) != lastSecond)
+    {
+        average.temp += lastResults.temp;
+        average.co2 += lastResults.co2;
+        average.humidity += lastResults.humidity;
+        numberOfSamples++;
+        lastSecond = time(NULL);
+    }
+
+    /* https://randomnerdtutorials.com/esp32-date-time-ntp-client-server-arduino/ */
+    static tm now;
+    getLocalTime(&now);
+    if ((59 == now.tm_sec) && !(now.tm_min % SAVE_TIME_MIN) && (numberOfSamples > 2))
+        saveAverage(now);
 
     int32_t co2Level = sensor_S8->get_co2();
     float temp = sht31.readTemperature();
@@ -163,6 +209,7 @@ void loop()
     {
         snprintf(responseBuffer, sizeof(responseBuffer), "C:%i", co2Level);
         websocketHandler.sendAll(responseBuffer);
+        // Serial.println(responseBuffer);
         lastResults.co2 = co2Level;
     }
 
