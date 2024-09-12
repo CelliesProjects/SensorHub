@@ -41,7 +41,7 @@ static storageStruct lastResults{
     0    /* humidity */
 };
 
-static std::forward_list<storageStruct> history;
+static std::list<storageStruct> history;
 
 void fatalError(const char *str)
 {
@@ -159,28 +159,43 @@ void setup()
                       { return request->reply(404, "text/html", "No page here. Use websocket to connect to /ws."); });
 }
 
-static storageStruct average{0};
+static storageStruct average{0, 0, 0};
 static uint32_t numberOfSamples{0};
 
 void saveAverage(const tm &timeinfo)
 {
-    Serial.print(asctime(&timeinfo));
+    // Serial.print(asctime(&timeinfo));
 
+    // make average from totals
     average.co2 /= numberOfSamples;
     average.temp /= numberOfSamples;
     average.humidity /= numberOfSamples;
-    Serial.printf(" - saving the average of %i samples: temp %.1f\tco2\t%ippm\thumidity %i%%\n",
+    Serial.printf("saving the average of %i samples: temp %.1f\tco2\t%ippm\thumidity %i%%\n",
                   numberOfSamples, average.temp, average.co2, average.humidity);
+
+    const auto MAX_HISTORY_ITEMS = 180;
+    static auto numberOfItems = 0;
+
+    if (numberOfItems == MAX_HISTORY_ITEMS)
+    {
+        Serial.println("popping last element");
+        history.pop_back();
+        history.push_front(average);
+    }
+    else
+    {
+        history.push_front(average);
+        numberOfItems++;
+    }
+    Serial.printf("items: %i\n", numberOfItems);
+
+    // we are done, reset averages
     average = {0, 0, 0};
     numberOfSamples = 0;
 }
 
 void loop()
 {
-    // add the values 60 times a minute to a running counter
-    // divide by 60 and add the average over that period to front of the history
-    // if there are MAX_HISTORY_ITEMS items delete the last item before adding the next one in front
-
     static time_t lastSecond = time(NULL);
     if (time(NULL) != lastSecond)
     {
@@ -191,7 +206,6 @@ void loop()
         lastSecond = time(NULL);
     }
 
-    /* https://randomnerdtutorials.com/esp32-date-time-ntp-client-server-arduino/ */
     static tm now;
     getLocalTime(&now);
     if ((59 == now.tm_sec) && !(now.tm_min % SAVE_TIME_MIN) && (numberOfSamples > 2))
@@ -209,7 +223,7 @@ void loop()
     {
         snprintf(responseBuffer, sizeof(responseBuffer), "C:%i", co2Level);
         websocketHandler.sendAll(responseBuffer);
-        // Serial.println(responseBuffer);
+        Serial.println(responseBuffer);
         lastResults.co2 = co2Level;
     }
 
@@ -217,6 +231,7 @@ void loop()
     {
         snprintf(responseBuffer, sizeof(responseBuffer), "T:%.1f", temp);
         websocketHandler.sendAll(responseBuffer);
+        Serial.println(responseBuffer);
         lastResults.temp = temp;
     }
 
@@ -224,6 +239,7 @@ void loop()
     {
         snprintf(responseBuffer, sizeof(responseBuffer), "H:%i", humidity);
         websocketHandler.sendAll(responseBuffer);
+        Serial.println(responseBuffer);
         lastResults.humidity = humidity;
     }
 
