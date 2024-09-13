@@ -31,14 +31,16 @@ static S8_UART *sensor_S8;
 
 static PsychicHttpServer server;
 static PsychicWebSocketHandler websocketHandler;
+static int32_t websocketClients = 0;
 
-static storageStruct lastResults{
-    NAN, /* temp */
-    0,   /* co2 */
-    0    /* humidity */
+static struct storageStruct lastResults
+{
+    NAN,   /* temp */
+        0, /* co2 */
+        0  /* humidity */
 };
 
-static std::list<storageStruct> history;
+static std::list<struct storageStruct> history;
 
 void fatalError(const char *str)
 {
@@ -117,70 +119,90 @@ void setup()
     server.config.max_open_sockets = 8;
     server.listen(80);
 
-    websocketHandler.onOpen([](PsychicWebSocketClient *client)
-                            {
-                                log_v("[socket] connection #%u connected from %s", client->socket(), client->remoteIP().toString());
-                                char buff[16];
-                                snprintf(buff, sizeof(buff), "H:%i", lastResults.humidity);
-                                client->sendMessage(buff);
-                                snprintf(buff, sizeof(buff), "T:%.1f", lastResults.temp);
-                                client->sendMessage(buff);
-                                snprintf(buff, sizeof(buff), "C:%i", lastResults.co2);
-                                client->sendMessage(buff);
+    websocketHandler.onOpen(
+        [](PsychicWebSocketClient *client)
+        {
+            websocketClients++;
+            log_v("[socket] connection #%u connected from %s", client->socket(), client->remoteIP().toString());
+            char buff[16];
+            snprintf(buff, sizeof(buff), "H:%i", lastResults.humidity);
+            client->sendMessage(buff);
+            snprintf(buff, sizeof(buff), "T:%.1f", lastResults.temp);
+            client->sendMessage(buff);
+            snprintf(buff, sizeof(buff), "C:%i", lastResults.co2);
+            client->sendMessage(buff);
 
-                                // push history to client
-                                String wsResponse = "G:\n";
-                                for (auto const &item : history)
-                                {
-                                    wsResponse.concat("T:");
-                                    wsResponse.concat(item.temp);
-                                    wsResponse.concat('\t');
+            // push history to client
+            String wsResponse = "G:\n";
+            for (auto const &item : history)
+            {
+                wsResponse.concat("T:");
+                wsResponse.concat(item.temp);
+                wsResponse.concat('\t');
 
-                                    wsResponse.concat("C:");
-                                    wsResponse.concat(item.co2);
-                                    wsResponse.concat('\t');
+                wsResponse.concat("C:");
+                wsResponse.concat(item.co2);
+                wsResponse.concat('\t');
 
-                                    wsResponse.concat("H:");
-                                    wsResponse.concat(item.humidity);
-                                    wsResponse.concat('\n');
-                                }
-                                client->sendMessage(wsResponse.c_str());
-                                Serial.printf("history message size for ws clients is %i bytes\n", wsResponse.length()); });
+                wsResponse.concat("H:");
+                wsResponse.concat(item.humidity);
+                wsResponse.concat('\n');
+            }
+            client->sendMessage(wsResponse.c_str());
+            Serial.printf("history message size for ws clients is %i bytes\n", wsResponse.length());
+        });
 
-    websocketHandler.onClose([](PsychicWebSocketClient *client)
-                             { Serial.printf("[socket] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString()); });
+    websocketHandler.onClose(
+        [](PsychicWebSocketClient *client)
+        {
+            websocketClients--;
+            Serial.printf("[socket] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString());
+        });
 
-    server.on(SENSORS_WS_URL, &websocketHandler);
+    server.on(SENSORS_WS_URL, HTTP_GET, &websocketHandler);
 
-    server.on("/ip", [](PsychicRequest *request)
-              {
-        String output = "Your IP is: " + request->client()->remoteIP().toString();
-        return request->reply(output.c_str()); });
+    server.on(
+        "/ip",
+        [](PsychicRequest *request)
+        {
+            String output = "Your IP is: " + request->client()->remoteIP().toString();
+            return request->reply(output.c_str());
+        });
 
-    server.on("/hello", HTTP_GET, [](PsychicRequest *request)
-              {
-        String hello = "Hello world!";
-        return request->reply(200, "text/html", hello.c_str()); });
+    server.on(
+        "/hello",
+        HTTP_GET,
+        [](PsychicRequest *request)
+        {
+            String hello = "Hello world!";
+            return request->reply(200, "text/html", hello.c_str());
+        });
 
-    server.onNotFound([](PsychicRequest *request)
-                      { return request->reply(404, "text/html", "No pages on this site. Use websocket to connect to /ws."); });
+    server.onNotFound(
+        [](PsychicRequest *request)
+        {
+            return request->reply(404, "text/html", "No pages on this site. Use websocket to connect to /ws.");
+        });
 
     // example callback everytime a connection is opened
-    server.onOpen([](PsychicClient *client)
-                  {
-                      Serial.printf("[http] connection #%u connected from %s\n", client->socket(), client->remoteIP().toString());
-                      // digitalWrite(BUILTIN_LED, HIGH);
-                  });
+    server.onOpen(
+        [](PsychicClient *client)
+        {
+            Serial.printf("[http] connection #%u connected from %s\n", client->socket(), client->remoteIP().toString());
+        });
 
     // example callback everytime a connection is closed
-    server.onClose([](PsychicClient *client)
-                   {
-                       Serial.printf("[http] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString());
-                       // digitalWrite(BUILTIN_LED, LOW);
-                   });
+    server.onClose(
+        [](PsychicClient *client)
+        {
+            Serial.printf("[http] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString());
+        });
 }
 
-static storageStruct average{0, 0, 0};
+static struct storageStruct average
+{
+    0, 0, 0
+};
 static uint32_t numberOfSamples{0};
 
 void saveAverage()
@@ -225,6 +247,8 @@ void loop()
         average.humidity += lastResults.humidity;
         numberOfSamples++;
         lastSecond = time(NULL);
+        if (websocketClients && !(lastSecond % 3))
+            websocketHandler.sendAll("P:"); /* send a ping to indicate we are still connected */
     }
 
     static tm now;
@@ -233,7 +257,7 @@ void loop()
         saveAverage();
 
     int32_t co2Level = sensor_S8->get_co2();
-    float temp = sht31.readTemperature(); // delays for 20ms - so this loop does not delay
+    float temp = sht31.readTemperature();    // delays for 20ms - so this loop does not delay
     int32_t humidity = sht31.readHumidity(); // only use the integer part to reduce noise
 
     temp = static_cast<float>(static_cast<int>(temp * 10.)) / 10.; // round off to 1 decimal place to reduce noise
@@ -250,11 +274,14 @@ void loop()
     // co2 level
     if (millis() - lastCo2ResponseMS > UPDATE_INTERVAL_MS && co2Level != lastResults.co2)
     {
-        snprintf(responseBuffer, sizeof(responseBuffer), "C:%i", co2Level);
-        digitalWrite(BUILTIN_LED, HIGH);
-        websocketHandler.sendAll(responseBuffer);
-        digitalWrite(BUILTIN_LED, LOW);
-        //Serial.println(responseBuffer);
+        if (websocketClients)
+        {
+            snprintf(responseBuffer, sizeof(responseBuffer), "C:%i", co2Level);
+            digitalWrite(BUILTIN_LED, HIGH);
+            websocketHandler.sendAll(responseBuffer);
+            digitalWrite(BUILTIN_LED, LOW);
+            Serial.println(responseBuffer);
+        }
         lastResults.co2 = co2Level;
         lastCo2ResponseMS = millis();
     }
@@ -262,11 +289,14 @@ void loop()
     // temperature
     if (millis() - lastTempResponseMS > UPDATE_INTERVAL_MS && !isnan(temp) && temp != lastResults.temp)
     {
-        snprintf(responseBuffer, sizeof(responseBuffer), "T:%.1f", temp);
-        digitalWrite(BUILTIN_LED, HIGH);
-        websocketHandler.sendAll(responseBuffer);
-        digitalWrite(BUILTIN_LED, LOW);
-        //Serial.println(responseBuffer);
+        if (websocketClients)
+        {
+            snprintf(responseBuffer, sizeof(responseBuffer), "T:%.1f", temp);
+            digitalWrite(BUILTIN_LED, HIGH);
+            websocketHandler.sendAll(responseBuffer);
+            digitalWrite(BUILTIN_LED, LOW);
+            Serial.println(responseBuffer);
+        }
         lastResults.temp = temp;
         lastTempResponseMS = millis();
     }
@@ -274,11 +304,15 @@ void loop()
     // humidity
     if (millis() - lastHumidityResponseMS > UPDATE_INTERVAL_MS && !isnan(humidity) && humidity != lastResults.humidity)
     {
-        snprintf(responseBuffer, sizeof(responseBuffer), "H:%i", humidity);
-        digitalWrite(BUILTIN_LED, HIGH);
-        websocketHandler.sendAll(responseBuffer);
-        digitalWrite(BUILTIN_LED, LOW);
-        //Serial.println(responseBuffer);
+        if (websocketClients)
+        {
+            snprintf(responseBuffer, sizeof(responseBuffer), "H:%i", humidity);
+            digitalWrite(BUILTIN_LED, HIGH);
+            websocketHandler.sendAll(responseBuffer);
+            digitalWrite(BUILTIN_LED, LOW);
+            Serial.println(responseBuffer);
+        }
+        
         lastResults.humidity = humidity;
         lastHumidityResponseMS = millis();
     }
