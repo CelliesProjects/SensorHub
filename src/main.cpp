@@ -35,9 +35,7 @@ static int32_t websocketClients = 0;
 
 static struct storageStruct lastResults
 {
-    NAN,   /* temp */
-        0, /* co2 */
-        0  /* humidity */
+    NAN, 0, 0
 };
 
 static std::list<struct storageStruct> history;
