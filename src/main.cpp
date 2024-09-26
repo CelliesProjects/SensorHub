@@ -127,10 +127,23 @@ void setup()
             client->sendMessage(buff);
             snprintf(buff, sizeof(buff), "C:%i", lastResults.co2);
             client->sendMessage(buff);
+        });
 
-            if (!history.empty())
+    websocketHandler.onFrame(
+        [](PsychicWebSocketRequest *request, httpd_ws_frame *frame)
+        {
+            Serial.printf("[socket] #%d sent: %s\n", request->client()->socket(), (char *)frame->payload);
+            const char *emptyList = "G:\n";
+
+            if (!strcmp((char *)frame->payload, emptyList)) // we have a request for history
             {
-                String wsResponse = "G:\n";
+                if (history.empty())
+                {
+                    Serial.println("sending empty list");
+                    return request->reply(emptyList);
+                }
+
+                String wsResponse = emptyList;
                 for (auto const &item : history)
                 {
                     wsResponse.concat("T:");
@@ -145,62 +158,57 @@ void setup()
                     wsResponse.concat(item.humidity);
                     wsResponse.concat('\n');
                 }
-                client->sendMessage(wsResponse.c_str());
-                Serial.printf("history message size %i bytes\n", wsResponse.length());
+                Serial.printf("sending history size %i bytes\n", wsResponse.length());
+                return request->reply(wsResponse.c_str());
             }
+            Serial.printf("unknown command %s\n", (char *)frame->payload);
+            return request->reply("unknown command");
         });
 
-    websocketHandler.onFrame(
-        [](PsychicWebSocketRequest *request, httpd_ws_frame *frame)
+    websocketHandler.onClose(
+        [](PsychicWebSocketClient *client)
         {
-            Serial.printf("[socket] #%d sent: %s\n", request->client()->socket(), (char *)frame->payload);
-            return request->reply(frame);
+            Serial.printf("[socket] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString());
         });
 
-        websocketHandler.onClose(
-            [](PsychicWebSocketClient *client)
-            {
-                Serial.printf("[socket] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString());
-            });
+    server.on(SENSORS_WS_URL, HTTP_GET, &websocketHandler);
 
-        server.on(SENSORS_WS_URL, HTTP_GET, &websocketHandler);
+    server.on(
+        "/ip",
+        [](PsychicRequest *request)
+        {
+            String output = "Your IP is: " + request->client()->remoteIP().toString();
+            return request->reply(output.c_str());
+        });
 
-        server.on(
-            "/ip",
-            [](PsychicRequest *request)
-            {
-                String output = "Your IP is: " + request->client()->remoteIP().toString();
-                return request->reply(output.c_str());
-            });
+    server.on(
+        "/hello",
+        HTTP_GET,
+        [](PsychicRequest *request)
+        {
+            String hello = "Hello world!";
+            return request->reply(200, "text/html", hello.c_str());
+        });
 
-        server.on(
-            "/hello",
-            HTTP_GET,
-            [](PsychicRequest *request)
-            {
-                String hello = "Hello world!";
-                return request->reply(200, "text/html", hello.c_str());
-            });
+    server.onNotFound(
+        [](PsychicRequest *request)
+        {
+            return request->reply(404, "text/html", "No pages on this site. Use websocket to connect to /ws.");
+        });
 
-        server.onNotFound(
-            [](PsychicRequest *request)
-            {
-                return request->reply(404, "text/html", "No pages on this site. Use websocket to connect to /ws.");
-            });
+    // example callback everytime a connection is opened
+    server.onOpen(
+        [](PsychicClient *client)
+        {
+            Serial.printf("[http] connection #%u connected from %s\n", client->socket(), client->remoteIP().toString());
+        });
 
-        // example callback everytime a connection is opened
-        server.onOpen(
-            [](PsychicClient *client)
-            {
-                Serial.printf("[http] connection #%u connected from %s\n", client->socket(), client->remoteIP().toString());
-            });
-
-        // example callback everytime a connection is closed
-        server.onClose(
-            [](PsychicClient *client)
-            {
-                Serial.printf("[http] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString());
-            });
+    // example callback everytime a connection is closed
+    server.onClose(
+        [](PsychicClient *client)
+        {
+            Serial.printf("[http] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString());
+        });
 }
 
 static struct storageStruct average
@@ -211,119 +219,119 @@ static uint32_t numberOfSamples{0};
 
 void saveAverage()
 {
-        average.co2 /= numberOfSamples;
-        average.temp /= numberOfSamples;
-        average.humidity /= numberOfSamples;
-        Serial.printf("saving the average of %i samples: temp %.1f\tco2\t%ippm\thumidity %i%%\n", numberOfSamples, average.temp, average.co2, average.humidity);
+    average.co2 /= numberOfSamples;
+    average.temp /= numberOfSamples;
+    average.humidity /= numberOfSamples;
+    Serial.printf("saving the average of %i samples: temp %.1f\tco2\t%ippm\thumidity %i%%\n", numberOfSamples, average.temp, average.co2, average.humidity);
 
-        const auto MAX_HISTORY_ITEMS = 180;
-        static auto numberOfItems = 0;
+    const auto MAX_HISTORY_ITEMS = 180;
+    static auto numberOfItems = 0;
 
-        if (numberOfItems == MAX_HISTORY_ITEMS)
-        {
-            history.pop_back();
-            history.push_front(average);
-        }
-        else
-        {
-            history.push_front(average);
-            numberOfItems++;
-        }
-        const auto clist = websocketHandler.getClientList();
-        if (!clist.empty())
-        {
-            static char responseBuffer[32];
-            snprintf(responseBuffer, sizeof(responseBuffer), "A:\nT:%.1f\tC:%i\tH:%i\n", average.temp, average.co2, average.humidity);
-            websocketHandler.sendAll(responseBuffer);
-        }
+    if (numberOfItems == MAX_HISTORY_ITEMS)
+    {
+        history.pop_back();
+        history.push_front(average);
+    }
+    else
+    {
+        history.push_front(average);
+        numberOfItems++;
+    }
+    const auto clist = websocketHandler.getClientList();
+    if (!clist.empty())
+    {
+        static char responseBuffer[32];
+        snprintf(responseBuffer, sizeof(responseBuffer), "A:\nT:%.1f\tC:%i\tH:%i\n", average.temp, average.co2, average.humidity);
+        websocketHandler.sendAll(responseBuffer);
+    }
 
-        // we are done, reset averages
-        average = {0, 0, 0};
-        numberOfSamples = 0;
+    // we are done, reset averages
+    average = {0, 0, 0};
+    numberOfSamples = 0;
 }
 
 void loop()
 {
-        static time_t lastSecond = time(NULL);
-        if (time(NULL) != lastSecond)
+    static time_t lastSecond = time(NULL);
+    if (time(NULL) != lastSecond)
+    {
+        average.temp += lastResults.temp;
+        average.co2 += lastResults.co2;
+        average.humidity += lastResults.humidity;
+        numberOfSamples++;
+        lastSecond = time(NULL);
+
+        const auto clist = websocketHandler.getClientList();
+        if (!(lastSecond % 3) && !clist.empty())
+            websocketHandler.sendAll("P:"); /* send a ping to indicate we are still connected */
+    }
+
+    static tm now;
+    getLocalTime(&now);
+    if ((59 == now.tm_sec) && !(now.tm_min % SAVE_TIME_MIN) && (numberOfSamples > 2))
+        saveAverage();
+
+    const int32_t co2Level = sensor_S8->get_co2();
+    float temp = sht31.readTemperature();          // readTemperature() delays for 20ms
+    const int32_t humidity = sht31.readHumidity(); // only use the integer part to reduce noise
+
+    temp = static_cast<float>(static_cast<int>(temp * 10.)) / 10.; // round off to 1 decimal place to reduce noise
+
+    static char responseBuffer[16];
+
+    // only 1 update per UPDATE_INTERVAL_MS for every value
+    const auto UPDATE_INTERVAL_MS = 1000;
+
+    static auto lastTempResponseMS = 0;
+    static auto lastHumidityResponseMS = 0;
+    static auto lastCo2ResponseMS = 0;
+
+    // co2 level
+    if (millis() - lastCo2ResponseMS > UPDATE_INTERVAL_MS && co2Level != lastResults.co2)
+    {
+        const auto clist = websocketHandler.getClientList();
+        if (!clist.empty())
         {
-            average.temp += lastResults.temp;
-            average.co2 += lastResults.co2;
-            average.humidity += lastResults.humidity;
-            numberOfSamples++;
-            lastSecond = time(NULL);
-
-            const auto clist = websocketHandler.getClientList();
-            if (!(lastSecond % 3) && !clist.empty())
-                websocketHandler.sendAll("P:"); /* send a ping to indicate we are still connected */
+            snprintf(responseBuffer, sizeof(responseBuffer), "C:%i", co2Level);
+            digitalWrite(BUILTIN_LED, HIGH);
+            websocketHandler.sendAll(responseBuffer);
+            digitalWrite(BUILTIN_LED, LOW);
+            // Serial.println(responseBuffer);
         }
+        lastResults.co2 = co2Level;
+        lastCo2ResponseMS = millis();
+    }
 
-        static tm now;
-        getLocalTime(&now);
-        if ((59 == now.tm_sec) && !(now.tm_min % SAVE_TIME_MIN) && (numberOfSamples > 2))
-            saveAverage();
-
-        const int32_t co2Level = sensor_S8->get_co2();
-        float temp = sht31.readTemperature();          // readTemperature() delays for 20ms
-        const int32_t humidity = sht31.readHumidity(); // only use the integer part to reduce noise
-
-        temp = static_cast<float>(static_cast<int>(temp * 10.)) / 10.; // round off to 1 decimal place to reduce noise
-
-        static char responseBuffer[16];
-
-        // only 1 update per UPDATE_INTERVAL_MS for every value
-        const auto UPDATE_INTERVAL_MS = 1000;
-
-        static auto lastTempResponseMS = 0;
-        static auto lastHumidityResponseMS = 0;
-        static auto lastCo2ResponseMS = 0;
-
-        // co2 level
-        if (millis() - lastCo2ResponseMS > UPDATE_INTERVAL_MS && co2Level != lastResults.co2)
+    // temperature
+    if (millis() - lastTempResponseMS > UPDATE_INTERVAL_MS && !isnan(temp) && temp != lastResults.temp)
+    {
+        const auto clist = websocketHandler.getClientList();
+        if (!clist.empty())
         {
-            const auto clist = websocketHandler.getClientList();
-            if (!clist.empty())
-            {
-                snprintf(responseBuffer, sizeof(responseBuffer), "C:%i", co2Level);
-                digitalWrite(BUILTIN_LED, HIGH);
-                websocketHandler.sendAll(responseBuffer);
-                digitalWrite(BUILTIN_LED, LOW);
-                // Serial.println(responseBuffer);
-            }
-            lastResults.co2 = co2Level;
-            lastCo2ResponseMS = millis();
+            snprintf(responseBuffer, sizeof(responseBuffer), "T:%.1f", temp);
+            digitalWrite(BUILTIN_LED, HIGH);
+            websocketHandler.sendAll(responseBuffer);
+            digitalWrite(BUILTIN_LED, LOW);
+            // Serial.println(responseBuffer);
         }
+        lastResults.temp = temp;
+        lastTempResponseMS = millis();
+    }
 
-        // temperature
-        if (millis() - lastTempResponseMS > UPDATE_INTERVAL_MS && !isnan(temp) && temp != lastResults.temp)
+    // humidity
+    if (millis() - lastHumidityResponseMS > UPDATE_INTERVAL_MS && !isnan(humidity) && humidity != lastResults.humidity)
+    {
+        const auto clist = websocketHandler.getClientList();
+        if (!clist.empty())
         {
-            const auto clist = websocketHandler.getClientList();
-            if (!clist.empty())
-            {
-                snprintf(responseBuffer, sizeof(responseBuffer), "T:%.1f", temp);
-                digitalWrite(BUILTIN_LED, HIGH);
-                websocketHandler.sendAll(responseBuffer);
-                digitalWrite(BUILTIN_LED, LOW);
-                // Serial.println(responseBuffer);
-            }
-            lastResults.temp = temp;
-            lastTempResponseMS = millis();
+            snprintf(responseBuffer, sizeof(responseBuffer), "H:%i", humidity);
+            digitalWrite(BUILTIN_LED, HIGH);
+            websocketHandler.sendAll(responseBuffer);
+            digitalWrite(BUILTIN_LED, LOW);
+            // Serial.println(responseBuffer);
         }
-
-        // humidity
-        if (millis() - lastHumidityResponseMS > UPDATE_INTERVAL_MS && !isnan(humidity) && humidity != lastResults.humidity)
-        {
-            const auto clist = websocketHandler.getClientList();
-            if (!clist.empty())
-            {
-                snprintf(responseBuffer, sizeof(responseBuffer), "H:%i", humidity);
-                digitalWrite(BUILTIN_LED, HIGH);
-                websocketHandler.sendAll(responseBuffer);
-                digitalWrite(BUILTIN_LED, LOW);
-                // Serial.println(responseBuffer);
-            }
-            lastResults.humidity = humidity;
-            lastHumidityResponseMS = millis();
-        }
-        yield();
+        lastResults.humidity = humidity;
+        lastHumidityResponseMS = millis();
+    }
+    yield();
 }
