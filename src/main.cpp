@@ -119,7 +119,7 @@ void setup()
     websocketHandler.onOpen(
         [](PsychicWebSocketClient *client)
         {
-            log_v("[socket] connection #%u connected from %s", client->socket(), client->remoteIP().toString());
+            Serial.printf("[socket] connection #%u connected from %s\n", client->socket(), client->remoteIP().toString());
             char buff[16];
             snprintf(buff, sizeof(buff), "H:%i", lastResults.humidity);
             client->sendMessage(buff);
@@ -132,16 +132,13 @@ void setup()
     websocketHandler.onFrame(
         [](PsychicWebSocketRequest *request, httpd_ws_frame *frame)
         {
-            Serial.printf("[socket] #%d sent: %s\n", request->client()->socket(), (char *)frame->payload);
+            log_v("[socket] #%d sent: %s\n", request->client()->socket(), (char *)frame->payload);
             const char *emptyList = "G:\n";
 
             if (!strcmp((char *)frame->payload, emptyList)) // we have a request for history
             {
                 if (history.empty())
-                {
-                    Serial.println("sending empty list");
                     return request->reply(emptyList);
-                }
 
                 String wsResponse = emptyList;
                 for (auto const &item : history)
@@ -158,10 +155,9 @@ void setup()
                     wsResponse.concat(item.humidity);
                     wsResponse.concat('\n');
                 }
-                Serial.printf("sending history size %i bytes\n", wsResponse.length());
                 return request->reply(wsResponse.c_str());
             }
-            Serial.printf("unknown command %s\n", (char *)frame->payload);
+            log_w("unknown command %s\n", (char *)frame->payload);
             return request->reply("unknown command");
         });
 
@@ -222,7 +218,7 @@ void saveAverage()
     average.co2 /= numberOfSamples;
     average.temp /= numberOfSamples;
     average.humidity /= numberOfSamples;
-    Serial.printf("saving the average of %i samples: temp %.1f\tco2\t%ippm\thumidity %i%%\n", numberOfSamples, average.temp, average.co2, average.humidity);
+    log_v("saving the average of %i samples: temp %.1f\tco2\t%ippm\thumidity %i%%\n", numberOfSamples, average.temp, average.co2, average.humidity);
 
     const auto MAX_HISTORY_ITEMS = 180;
     static auto numberOfItems = 0;
@@ -296,7 +292,6 @@ void loop()
             digitalWrite(BUILTIN_LED, HIGH);
             websocketHandler.sendAll(responseBuffer);
             digitalWrite(BUILTIN_LED, LOW);
-            // Serial.println(responseBuffer);
         }
         lastResults.co2 = co2Level;
         lastCo2ResponseMS = millis();
@@ -312,7 +307,6 @@ void loop()
             digitalWrite(BUILTIN_LED, HIGH);
             websocketHandler.sendAll(responseBuffer);
             digitalWrite(BUILTIN_LED, LOW);
-            // Serial.println(responseBuffer);
         }
         lastResults.temp = temp;
         lastTempResponseMS = millis();
@@ -328,7 +322,6 @@ void loop()
             digitalWrite(BUILTIN_LED, HIGH);
             websocketHandler.sendAll(responseBuffer);
             digitalWrite(BUILTIN_LED, LOW);
-            // Serial.println(responseBuffer);
         }
         lastResults.humidity = humidity;
         lastHumidityResponseMS = millis();
