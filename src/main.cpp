@@ -32,10 +32,7 @@ static S8_UART *sensor_S8;
 static PsychicHttpServer server;
 static PsychicWebSocketHandler websocketHandler;
 
-static struct storageStruct lastResults
-{
-    NAN, 0, 0
-};
+static struct storageStruct lastResults = {NAN, 0, 0};
 
 static std::list<struct storageStruct> history;
 
@@ -183,23 +180,6 @@ void setup()
 
     server.on(SENSORS_WS_URL, HTTP_GET, &websocketHandler);
 
-    server.on(
-        "/ip",
-        [](PsychicRequest *request)
-        {
-            String output = "Your IP is: " + request->client()->remoteIP().toString();
-            return request->reply(output.c_str());
-        });
-
-    server.on(
-        "/hello",
-        HTTP_GET,
-        [](PsychicRequest *request)
-        {
-            String hello = "Hello world!";
-            return request->reply(200, "text/html", hello.c_str());
-        });
-
     server.onNotFound(
         [](PsychicRequest *request)
         {
@@ -221,10 +201,7 @@ void setup()
         });
 }
 
-static struct storageStruct average
-{
-    0, 0, 0
-};
+static struct storageStruct average = {0, 0, 0};
 static uint32_t numberOfSamples{0};
 
 void saveAverage()
@@ -260,8 +237,15 @@ void saveAverage()
     numberOfSamples = 0;
 }
 
+constexpr const auto TICK_RATE_HZ = 50;
+
+constexpr const TickType_t ticksToWait = pdTICKS_TO_MS(1000 / TICK_RATE_HZ);
+static TickType_t xLastWakeTime = xTaskGetTickCount();
+
 void loop()
 {
+    vTaskDelayUntil(&xLastWakeTime, ticksToWait);
+
     static time_t lastSecond = time(NULL);
     if (time(NULL) != lastSecond)
     {
@@ -333,5 +317,4 @@ void loop()
         lastResults.humidity = humidity;
         lastHumidityResponseMS = millis();
     }
-    yield();
 }
