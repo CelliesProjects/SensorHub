@@ -39,6 +39,13 @@ static struct storageStruct lastResults
 
 static std::list<struct storageStruct> history;
 
+const auto UPDATE_INTERVAL_MS = 1000;
+
+/* send only 1 update per UPDATE_INTERVAL_MS for every value */
+static auto lastTempResponseMS = 0;
+static auto lastHumidityResponseMS = 0;
+static auto lastCo2ResponseMS = 0;
+
 void fatalError(const char *str)
 {
     log_e("FATAL ERROR %s - SYTEM HALTED", str);
@@ -120,13 +127,20 @@ void setup()
         [](PsychicWebSocketClient *client)
         {
             Serial.printf("[socket] connection #%u connected from %s\n", client->socket(), client->remoteIP().toString());
+            if (lastResults.temp == NAN)
+                return;
             char buff[16];
             snprintf(buff, sizeof(buff), "H:%i", lastResults.humidity);
             client->sendMessage(buff);
+            lastHumidityResponseMS = millis();
+
             snprintf(buff, sizeof(buff), "T:%.1f", lastResults.temp);
             client->sendMessage(buff);
+            lastTempResponseMS = millis();
+
             snprintf(buff, sizeof(buff), "C:%i", lastResults.co2);
             client->sendMessage(buff);
+            lastCo2ResponseMS = millis();
         });
 
     websocketHandler.onFrame(
@@ -274,13 +288,6 @@ void loop()
     temp = static_cast<float>(static_cast<int>(temp * 10.)) / 10.; // round off to 1 decimal place to reduce noise
 
     static char responseBuffer[16];
-
-    // only 1 update per UPDATE_INTERVAL_MS for every value
-    const auto UPDATE_INTERVAL_MS = 1000;
-
-    static auto lastTempResponseMS = 0;
-    static auto lastHumidityResponseMS = 0;
-    static auto lastCo2ResponseMS = 0;
 
     // co2 level
     if (millis() - lastCo2ResponseMS > UPDATE_INTERVAL_MS && co2Level != lastResults.co2)
