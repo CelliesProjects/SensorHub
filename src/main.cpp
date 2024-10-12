@@ -66,15 +66,15 @@ void setup()
 
         delay(2000);
     */
-    Serial.println("SensorHub");
+    log_i("SensorHub");
 
     pinMode(BUILTIN_LED, OUTPUT);
 
     SPI.setHwCs(true);
     SPI.begin(SCK, MISO, MOSI);
-    bool result = SD.begin(SS);
+    //bool result = SD.begin(SS);
 
-    log_i("SDcard %s mounted", result ? "is" : "not");
+    //log_i("SDcard %s mounted", result ? "is" : "not");
 
     Wire.begin(SHT31_SDA, SHT31_SCL);
     if (!sht31.begin(SHT31_DEFAULT_ADDR))
@@ -102,7 +102,7 @@ void setup()
     log_i("IP %s", WiFi.localIP().toString().c_str());
 
     /* sync the clock with ntp */
-    Serial.println("syncing NTP");
+    log_i("syncing NTP");
     configTzTime(TIMEZONE, NTP_POOL);
 
     tm now{};
@@ -110,12 +110,9 @@ void setup()
     while (!getLocalTime(&now, 0))
         delay(10);
 
-    Serial.println("NTP synced");
-
-    log_i("Sensor websocket started at http://%s%s", WiFi.localIP().toString().c_str(), SENSORS_WS_URL);
+    log_i("NTP synced");
 
     // setup the webserver
-
     server.config.max_uri_handlers = 8;
     server.config.max_open_sockets = 8;
     server.listen(80);
@@ -123,7 +120,8 @@ void setup()
     websocketHandler.onOpen(
         [](PsychicWebSocketClient *client)
         {
-            Serial.printf("[socket] connection #%u connected from %s\n", client->socket(), client->remoteIP().toString());
+            log_i("[socket] connection #%u connected from %s", client->socket(), client->remoteIP().toString());
+
             if (lastResults.temp == NAN)
                 return;
             char buff[16];
@@ -143,15 +141,15 @@ void setup()
     websocketHandler.onFrame(
         [](PsychicWebSocketRequest *request, httpd_ws_frame *frame)
         {
-            log_v("[socket] #%d sent: %s\n", request->client()->socket(), (char *)frame->payload);
-            const char *emptyList = "G:\n";
+            log_v("[socket] #%d sent: %s", request->client()->socket(), (char *)frame->payload);
 
-            if (!strcmp((char *)frame->payload, emptyList)) // we have a request for history
+            const char *emptyListStr = "G:\n";
+            if (!strcmp((char *)frame->payload, emptyListStr))
             {
                 if (history.empty())
-                    return request->reply(emptyList);
+                    return request->reply(emptyListStr);
 
-                String wsResponse = emptyList;
+                String wsResponse = emptyListStr;
                 for (auto const &item : history)
                 {
                     wsResponse.concat("T:");
@@ -168,14 +166,14 @@ void setup()
                 }
                 return request->reply(wsResponse.c_str());
             }
-            log_w("unknown command %s\n", (char *)frame->payload);
+            log_w("unknown command %s", (char *)frame->payload);
             return request->reply("unknown command");
         });
 
     websocketHandler.onClose(
         [](PsychicWebSocketClient *client)
         {
-            Serial.printf("[socket] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString());
+            log_i("[socket] connection #%u closed from %s", client->socket(), client->remoteIP().toString());
         });
 
     server.on(SENSORS_WS_URL, HTTP_GET, &websocketHandler);
@@ -190,15 +188,17 @@ void setup()
     server.onOpen(
         [](PsychicClient *client)
         {
-            Serial.printf("[http] connection #%u connected from %s\n", client->socket(), client->remoteIP().toString());
+            log_i("[http] connection #%u connected from %s", client->socket(), client->remoteIP().toString());
         });
 
     // example callback everytime a connection is closed
     server.onClose(
         [](PsychicClient *client)
         {
-            Serial.printf("[http] connection #%u closed from %s\n", client->socket(), client->remoteIP().toString());
+            log_i("[http] connection #%u closed from %s", client->socket(), client->remoteIP().toString());
         });
+
+    log_i("Sensor websocket started at http://%s%s", WiFi.localIP().toString().c_str(), SENSORS_WS_URL);
 }
 
 static struct storageStruct average = {0, 0, 0};
@@ -209,7 +209,7 @@ void saveAverage()
     average.co2 /= numberOfSamples;
     average.temp /= numberOfSamples;
     average.humidity /= numberOfSamples;
-    log_v("saving the average of %i samples: temp %.1f\tco2\t%ippm\thumidity %i%%\n", numberOfSamples, average.temp, average.co2, average.humidity);
+    log_v("saving the average of %i samples: temp %.1f\tco2\t%ippm\thumidity %i%%", numberOfSamples, average.temp, average.co2, average.humidity);
 
     const auto MAX_HISTORY_ITEMS = 180;
     static auto numberOfItems = 0;
