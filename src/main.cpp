@@ -23,7 +23,7 @@ IPAddress DNS_SERVER(192, 168, 0, 10);
 #define NTP_POOL "nl.pool.ntp.org" /* change 'nl' to your countries ISO code for better latency */
 #endif
 #ifndef TIMEZONE
-#define TIMEZONE "CET-1CEST,M3.5.0/2,M10.5.0/3"; /* Central European Time - see https://sites.google.com/a/usapiens.com/opnode/time-zones */
+#define TIMEZONE "CET-1CEST,M3.5.0/2,M10.5.0/3" /* Central European Time - see https://sites.google.com/a/usapiens.com/opnode/time-zones */
 #endif
 
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
