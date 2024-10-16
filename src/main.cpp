@@ -2,6 +2,7 @@
 #include <SD.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <driver/uart.h>
 
 #include <Adafruit_SHT31.h>
@@ -72,9 +73,9 @@ void setup()
 
     SPI.setHwCs(true);
     SPI.begin(SCK, MISO, MOSI);
-    //bool result = SD.begin(SS);
+    // bool result = SD.begin(SS);
 
-    //log_i("SDcard %s mounted", result ? "is" : "not");
+    // log_i("SDcard %s mounted", result ? "is" : "not");
 
     Wire.begin(SHT31_SDA, SHT31_SCL);
     if (!sht31.begin(SHT31_DEFAULT_ADDR))
@@ -87,7 +88,7 @@ void setup()
         fatalError("Could not initialize CO2 sensor");
 
     WiFi.mode(WIFI_MODE_AP);
-    
+
     if (!WiFi.config(STATIC_IP, GATEWAY, SUBNET, DNS_SERVER))
         log_e("Setting static IP failed");
 
@@ -99,6 +100,11 @@ void setup()
 
     log_i("Connected to %s", SSID);
     log_i("IP %s", WiFi.localIP().toString().c_str());
+
+    if (!MDNS.begin(MDNS_NAME))
+        log_e("Could not start mDNS service");
+    else
+        log_i("mDNS name %s.local", MDNS_NAME);
 
     /* sync the clock with ntp */
     log_i("syncing NTP");
