@@ -279,9 +279,7 @@ void loop()
         if (!clist.empty())
         {
             snprintf(responseBuffer, sizeof(responseBuffer), "C:%i", co2Level);
-            digitalWrite(BUILTIN_LED, HIGH);
             websocketHandler.sendAll(responseBuffer);
-            digitalWrite(BUILTIN_LED, LOW);
         }
         lastResults.co2 = co2Level;
         lastCo2ResponseMS = millis();
@@ -294,9 +292,7 @@ void loop()
         if (!clist.empty())
         {
             snprintf(responseBuffer, sizeof(responseBuffer), "T:%.1f", temp);
-            digitalWrite(BUILTIN_LED, HIGH);
             websocketHandler.sendAll(responseBuffer);
-            digitalWrite(BUILTIN_LED, LOW);
         }
         lastResults.temp = temp;
         lastTempResponseMS = millis();
@@ -309,9 +305,7 @@ void loop()
         if (!clist.empty())
         {
             snprintf(responseBuffer, sizeof(responseBuffer), "H:%i", humidity);
-            digitalWrite(BUILTIN_LED, HIGH);
             websocketHandler.sendAll(responseBuffer);
-            digitalWrite(BUILTIN_LED, LOW);
         }
         lastResults.humidity = humidity;
         lastHumidityResponseMS = millis();
