@@ -86,12 +86,11 @@ void setup()
     if (!sensor_S8)
         fatalError("Could not initialize CO2 sensor");
 
-    /* try to set a static IP */
+    WiFi.mode(WIFI_MODE_AP);
+    
     if (!WiFi.config(STATIC_IP, GATEWAY, SUBNET, DNS_SERVER))
         log_e("Setting static IP failed");
 
-    // connect to wifi
-    WiFi.mode(WIFI_MODE_AP);
     WiFi.setAutoReconnect(true);
     WiFi.begin(SSID, PSK);
     WiFi.setSleep(false);
