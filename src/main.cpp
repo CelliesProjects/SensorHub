@@ -104,8 +104,10 @@ void setup()
     if (!MDNS.begin(MDNS_NAME))
         log_e("Could not start mDNS service");
     else
+    {
+        MDNS.addService("http", "tcp", 80);
         log_i("mDNS name %s.local", MDNS_NAME);
-
+    }
     /* sync the clock with ntp */
     log_i("syncing NTP");
     configTzTime(TIMEZONE, NTP_POOL);
