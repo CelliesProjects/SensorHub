@@ -12,11 +12,6 @@
 #include "wifiSecrets.h"
 #include "storageStruct.h"
 
-IPAddress STATIC_IP(192, 168, 0, 20);
-IPAddress SUBNET(255, 255, 255, 0);
-IPAddress GATEWAY(192, 168, 0, 1);
-IPAddress DNS_SERVER(192, 168, 0, 10);
-
 #define SENSORS_WS_URL "/sensors"
 #define SAVE_TIME_MIN (1) /* data save interval in minutes */
 
@@ -32,19 +27,16 @@ static S8_UART *sensor_S8;
 
 static PsychicHttpServer server;
 static PsychicWebSocketHandler websocketHandler;
-
-static struct storageStruct lastResults = {NAN, 0, 0};
-
 static std::list<struct storageStruct> history;
 
-const auto UPDATE_INTERVAL_MS = 1000;
-
 /* send only 1 update per UPDATE_INTERVAL_MS for every value */
+const auto UPDATE_INTERVAL_MS = 1000;
 static auto lastTempResponseMS = 0;
 static auto lastHumidityResponseMS = 0;
 static auto lastCo2ResponseMS = 0;
+static struct storageStruct lastResults = {NAN, 0, 0};
 
-void fatalError(const char *str)
+static void fatalError(const char *str)
 {
     log_e("FATAL ERROR %s - SYTEM HALTED", str);
 
@@ -88,21 +80,18 @@ void setup()
         fatalError("Could not initialize CO2 sensor");
 
     WiFi.mode(WIFI_MODE_AP);
-
-    if (!WiFi.config(STATIC_IP, GATEWAY, SUBNET, DNS_SERVER))
-        log_e("Setting static IP failed");
-
     WiFi.setAutoReconnect(true);
     WiFi.begin(SSID, PSK);
     WiFi.setSleep(false);
-    while (!WiFi.isConnected())
-        delay(10);
+    WiFi.waitForConnectResult();
+    if (!WiFi.isConnected())
+        fatalError("Could not connect WiFi");
 
     log_i("Connected to %s", SSID);
     log_i("IP %s", WiFi.localIP().toString().c_str());
 
     if (!MDNS.begin(MDNS_NAME))
-        log_e("Could not start mDNS service");
+        fatalError("Could not start mDNS service");
     else
     {
         MDNS.addService("http", "tcp", 80);
@@ -111,9 +100,7 @@ void setup()
     /* sync the clock with ntp */
     log_i("syncing NTP");
     configTzTime(TIMEZONE, NTP_POOL);
-
     tm now{};
-
     while (!getLocalTime(&now, 0))
         delay(10);
 
@@ -245,7 +232,6 @@ void saveAverage()
 }
 
 constexpr const auto TICK_RATE_HZ = 50;
-
 constexpr const TickType_t ticksToWait = pdTICKS_TO_MS(1000 / TICK_RATE_HZ);
 static TickType_t xLastWakeTime = xTaskGetTickCount();
 
