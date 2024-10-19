@@ -136,34 +136,29 @@ void setup()
         [](PsychicWebSocketRequest *request, httpd_ws_frame *frame)
         {
             const char *emptyListStr = "G:\n";
-            const char *payload =reinterpret_cast<char *>(frame->payload);
 
-            log_v("[socket] #%d sent: %s", request->client()->socket(), payload);
+            if (strcmp(reinterpret_cast<char *>(frame->payload), emptyListStr))
+                return request->reply("unknown command");
 
-            if (!strcmp(payload, emptyListStr))
+            if (history.empty())
+                return request->reply(emptyListStr);
+
+            String wsResponse = emptyListStr;
+            for (auto const &item : history)
             {
-                if (history.empty())
-                    return request->reply(emptyListStr);
+                wsResponse.concat("T:");
+                wsResponse.concat(item.temp);
+                wsResponse.concat('\t');
 
-                String wsResponse = emptyListStr;
-                for (auto const &item : history)
-                {
-                    wsResponse.concat("T:");
-                    wsResponse.concat(item.temp);
-                    wsResponse.concat('\t');
+                wsResponse.concat("C:");
+                wsResponse.concat(item.co2);
+                wsResponse.concat('\t');
 
-                    wsResponse.concat("C:");
-                    wsResponse.concat(item.co2);
-                    wsResponse.concat('\t');
-
-                    wsResponse.concat("H:");
-                    wsResponse.concat(item.humidity);
-                    wsResponse.concat('\n');
-                }
-                return request->reply(wsResponse.c_str());
+                wsResponse.concat("H:");
+                wsResponse.concat(item.humidity);
+                wsResponse.concat('\n');
             }
-            log_w("unknown command %s", payload);
-            return request->reply("unknown command");
+            return request->reply(wsResponse.c_str());
         });
 
     websocketHandler.onClose(
