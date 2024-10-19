@@ -95,9 +95,9 @@ void setup()
     else
     {
         MDNS.addService("http", "tcp", 80);
-        log_i("mDNS name %s.local", MDNS_NAME);
+        log_v("mDNS name %s.local", MDNS_NAME);
     }
-    /* sync the clock with ntp */
+
     log_i("syncing NTP");
     configTzTime(TIMEZONE, NTP_POOL);
     tm now{};
@@ -106,7 +106,6 @@ void setup()
 
     log_i("NTP synced");
 
-    // setup the webserver
     server.config.max_uri_handlers = 8;
     server.config.max_open_sockets = 8;
     server.listen(80);
@@ -114,7 +113,7 @@ void setup()
     websocketHandler.onOpen(
         [](PsychicWebSocketClient *client)
         {
-            log_i("[socket] connection #%u connected from %s", client->socket(), client->remoteIP().toString());
+            log_v("[socket] connection #%u connected from %s", client->socket(), client->remoteIP().toString());
 
             if (lastResults.temp == NAN)
                 return;
@@ -160,36 +159,33 @@ void setup()
             }
             return request->reply(wsResponse.c_str());
         });
-
-    websocketHandler.onClose(
-        [](PsychicWebSocketClient *client)
-        {
-            log_i("[socket] connection #%u closed from %s", client->socket(), client->remoteIP().toString());
-        });
-
-    server.on(SENSORS_WS_URL, HTTP_GET, &websocketHandler);
-
-    server.onNotFound(
-        [](PsychicRequest *request)
-        {
-            return request->reply(404, "text/html", "No pages on this site. Use websocket to connect to /ws.");
-        });
-
-    // example callback everytime a connection is opened
+/*
     server.onOpen(
         [](PsychicClient *client)
         {
             log_i("[http] connection #%u connected from %s", client->socket(), client->remoteIP().toString());
         });
 
-    // example callback everytime a connection is closed
     server.onClose(
         [](PsychicClient *client)
         {
             log_i("[http] connection #%u closed from %s", client->socket(), client->remoteIP().toString());
         });
+*/
+    server.on(SENSORS_WS_URL, HTTP_GET, &websocketHandler);
 
-    log_i("Sensor websocket started at http://%s%s", WiFi.localIP().toString().c_str(), SENSORS_WS_URL);
+    server.onNotFound(
+        [](PsychicRequest *request)
+        {
+            char html[96];
+            snprintf(html, sizeof(html),
+                     "<h2>SensorHub</h2>Use websocket to connect to %s%s",
+                     request->host().c_str(),
+                     SENSORS_WS_URL);
+            return request->reply(404, "text/html", html);
+        });
+
+    log_i("Sensor websocket started at ws://%s.local%s", MDNS_NAME, SENSORS_WS_URL);
 }
 
 static struct storageStruct average = {0, 0, 0};
