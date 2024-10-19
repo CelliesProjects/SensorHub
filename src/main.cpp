@@ -135,10 +135,12 @@ void setup()
     websocketHandler.onFrame(
         [](PsychicWebSocketRequest *request, httpd_ws_frame *frame)
         {
-            log_v("[socket] #%d sent: %s", request->client()->socket(), (char *)frame->payload);
-
             const char *emptyListStr = "G:\n";
-            if (!strcmp((char *)frame->payload, emptyListStr))
+            const char *payload =reinterpret_cast<char *>(frame->payload);
+
+            log_v("[socket] #%d sent: %s", request->client()->socket(), payload);
+
+            if (!strcmp(payload, emptyListStr))
             {
                 if (history.empty())
                     return request->reply(emptyListStr);
@@ -160,7 +162,7 @@ void setup()
                 }
                 return request->reply(wsResponse.c_str());
             }
-            log_w("unknown command %s", (char *)frame->payload);
+            log_w("unknown command %s", payload);
             return request->reply("unknown command");
         });
 
