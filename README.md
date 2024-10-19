@@ -13,7 +13,6 @@ You can use any esp32 to run this app. Configured compile targets are esp32-s2 a
 ```bash
 git clone https://github.com/CelliesProjects/SensorHub.git
 ```
-
  2.  Open the install folder in PlatformIO and add a `wifiSecrets.h` file to the `src` folder with the following content:<br>
  ```c++
 #ifndef _WIFI_SECRET_
@@ -24,7 +23,8 @@ git clone https://github.com/CelliesProjects/SensorHub.git
 
 #endif
 ```
-3.  Build and upload the firmware to the esp32.
+3.  In `platformio.ini` adjust `NTP_POOL` to [your countries iso code](https://www.iban.com/country-codes) and `TIMEZONE` to [your local time zone](https://remotemonitoringsystems.ca/time-zone-abbreviations.php).
+4.  Build and upload the firmware to the esp32.
 
 ## Done!
 
